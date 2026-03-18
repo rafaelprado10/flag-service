@@ -103,8 +103,20 @@ def create_flag():
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO flags (name, description, is_enabled, created_at, updated_at)
-                    VALUES (%s, %s, %s, NOW(), NOW())
+                    INSERT INTO flags (
+                        name,
+                        description,
+                        is_enabled,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        NOW(),
+                        NOW()
+                    )
                     RETURNING *
                     """,
                     (name, description, is_enabled),
@@ -175,16 +187,18 @@ def update_flag(name):
 
     if not fields:
         return (
-            jsonify(
-                {
-                    "error": "Pelo menos um campo ('description', 'is_enabled') é obrigatório"
-                }
-            ),
+            jsonify({"error": """Pelo menos um campo (
+                        'description',
+                        'is_enabled'
+                    ) é obrigatório"""}),
             400,
         )
 
     values.append(name)
-    query = f"UPDATE flags SET {', '.join(fields)}, updated_at = NOW() WHERE name = %s RETURNING *"
+    query = f"""UPDATE flags SET
+                    {', '.join(fields)},
+                    updated_at = NOW()
+                WHERE name = %s RETURNING *"""
 
     try:
         with pool.connection() as conn:
