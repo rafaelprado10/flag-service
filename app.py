@@ -43,7 +43,8 @@ except psycopg.OperationalError as e:
 
 # --- Middleware de Autenticação ---
 def require_auth(f):
-    """ Middleware para validar a chave de API contra o auth-service """
+    """Middleware para validar a chave de API contra o auth-service"""
+
     @wraps(f)
     def decorated(*args, **kwargs):
         auth_header = request.headers.get("Authorization")
@@ -53,44 +54,49 @@ def require_auth(f):
         try:
             validate_url = f"{AUTH_SERVICE_URL}/validate"
             response = requests.get(
-                validate_url,
-                headers={"Authorization": auth_header},
-                timeout=3
+                validate_url, headers={"Authorization": auth_header}, timeout=3
             )
 
             if response.status_code != 200:
-                log.warning(f"Falha na validação da chave (status: {response.status_code})")
+                log.warning(
+                    f"Falha na validação da chave (status: {response.status_code})"
+                )
                 return jsonify({"error": "Chave de API inválida"}), 401
 
         except requests.exceptions.Timeout:
             log.error("Timeout ao conectar com o auth-service")
-            return jsonify({"error": "Serviço de autenticação indisponível (timeout)"}), 504
+            return (
+                jsonify({"error": "Serviço de autenticação indisponível (timeout)"}),
+                504,
+            )
         except requests.exceptions.RequestException as e:
             log.error(f"Erro ao conectar com o auth-service: {e}")
             return jsonify({"error": "Serviço de autenticação indisponível"}), 503
 
         return f(*args, **kwargs)
+
     return decorated
 
 
 # --- Endpoints da API ---
 
-@app.route('/health')
+
+@app.route("/health")
 def health():
     return jsonify({"status": "ok"})
 
 
-@app.route('/flags', methods=['POST'])
+@app.route("/flags", methods=["POST"])
 @require_auth
 def create_flag():
-    """ Cria uma nova definição de feature flag """
+    """Cria uma nova definição de feature flag"""
     data = request.get_json()
-    if not data or 'name' not in data:
+    if not data or "name" not in data:
         return jsonify({"error": "'name' é obrigatório"}), 400
 
-    name = data['name']
-    description = data.get('description', '')
-    is_enabled = data.get('is_enabled', False)
+    name = data["name"]
+    description = data.get("description", "")
+    is_enabled = data.get("is_enabled", False)
 
     try:
         with pool.connection() as conn:
@@ -101,7 +107,7 @@ def create_flag():
                     VALUES (%s, %s, %s, NOW(), NOW())
                     RETURNING *
                     """,
-                    (name, description, is_enabled)
+                    (name, description, is_enabled),
                 )
                 new_flag = cur.fetchone()  # dict_row => dict
 
@@ -117,10 +123,10 @@ def create_flag():
         return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
 
 
-@app.route('/flags', methods=['GET'])
+@app.route("/flags", methods=["GET"])
 @require_auth
 def get_flags():
-    """ Lista todas as feature flags """
+    """Lista todas as feature flags"""
     try:
         with pool.connection() as conn:
             with conn.cursor() as cur:
@@ -132,10 +138,10 @@ def get_flags():
         return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
 
 
-@app.route('/flags/<string:name>', methods=['GET'])
+@app.route("/flags/<string:name>", methods=["GET"])
 @require_auth
 def get_flag(name):
-    """ Busca uma feature flag específica pelo nome """
+    """Busca uma feature flag específica pelo nome"""
     try:
         with pool.connection() as conn:
             with conn.cursor() as cur:
@@ -149,10 +155,10 @@ def get_flag(name):
         return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
 
 
-@app.route('/flags/<string:name>', methods=['PUT'])
+@app.route("/flags/<string:name>", methods=["PUT"])
 @require_auth
 def update_flag(name):
-    """ Atualiza uma feature flag (descrição ou status 'is_enabled') """
+    """Atualiza uma feature flag (descrição ou status 'is_enabled')"""
     data = request.get_json()
     if not data:
         return jsonify({"error": "Corpo da requisição obrigatório"}), 400
@@ -160,15 +166,22 @@ def update_flag(name):
     fields = []
     values = []
 
-    if 'description' in data:
+    if "description" in data:
         fields.append("description = %s")
-        values.append(data['description'])
-    if 'is_enabled' in data:
+        values.append(data["description"])
+    if "is_enabled" in data:
         fields.append("is_enabled = %s")
-        values.append(data['is_enabled'])
+        values.append(data["is_enabled"])
 
     if not fields:
-        return jsonify({"error": "Pelo menos um campo ('description', 'is_enabled') é obrigatório"}), 400
+        return (
+            jsonify(
+                {
+                    "error": "Pelo menos um campo ('description', 'is_enabled') é obrigatório"
+                }
+            ),
+            400,
+        )
 
     values.append(name)
     query = f"UPDATE flags SET {', '.join(fields)}, updated_at = NOW() WHERE name = %s RETURNING *"
@@ -190,10 +203,10 @@ def update_flag(name):
         return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
 
 
-@app.route('/flags/<string:name>', methods=['DELETE'])
+@app.route("/flags/<string:name>", methods=["DELETE"])
 @require_auth
 def delete_flag(name):
-    """ Deleta uma feature flag """
+    """Deleta uma feature flag"""
     try:
         with pool.connection() as conn:
             with conn.cursor() as cur:
@@ -211,6 +224,6 @@ def delete_flag(name):
         return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     port = int(os.getenv("PORT", 8002))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
