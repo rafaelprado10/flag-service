@@ -115,8 +115,7 @@ jobs:
       - name: Set image tag
         id: image
         run: |
-          SHORT_SHA="$(git rev-parse --short HEAD)"
-          IMAGE_TAG="${IMAGE_VERSION}-${SHORT_SHA}"
+          IMAGE_TAG="${IMAGE_VERSION}"
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
           echo "tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
           echo "uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
