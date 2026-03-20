@@ -91,7 +91,7 @@ jobs:
     name: Compute release tag
     runs-on: ubuntu-latest
     needs: security_scan
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
     outputs:
       release_tag: ${{ steps.tag.outputs.release_tag }}
     steps:
@@ -120,7 +120,7 @@ jobs:
     name: Docker Build & Push (ECR)
     runs-on: ubuntu-latest
     needs: compute_release_tag
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
     outputs:
       image_tag: ${{ steps.image.outputs.tag }}
     env:
@@ -169,7 +169,7 @@ jobs:
     name: Update manifest image tag in current repository
     runs-on: ubuntu-latest
     needs: [compute_release_tag, docker_build_push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
     steps:
       - name: Checkout current repository
         uses: actions/checkout@v4
@@ -182,7 +182,7 @@ jobs:
           RELEASE_TAG: ${{ needs.compute_release_tag.outputs.release_tag }}
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          MANIFEST_PATH: deployment.yaml
+          MANIFEST_PATH: k8s/deployment.yaml
         run: |
           if [ ! -f "${MANIFEST_PATH}" ]; then
             echo "Manifest file not found: ${MANIFEST_PATH}"
@@ -202,7 +202,7 @@ jobs:
     name: Create tag in current repository
     runs-on: ubuntu-latest
     needs: [compute_release_tag, docker_build_push, update_manifest_in_repo]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]'
     steps:
       - name: Checkout current repository
         uses: actions/checkout@v4
