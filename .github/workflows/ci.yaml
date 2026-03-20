@@ -182,10 +182,16 @@ jobs:
           RELEASE_TAG: ${{ needs.compute_release_tag.outputs.release_tag }}
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          MANIFEST_PATH: k8s/deployment.yaml
         run: |
+          MANIFEST_PATH=""
+          if [ -f "k8s/deployment.yaml" ]; then
+            MANIFEST_PATH="k8s/deployment.yaml"
+          elif [ -f "deployment.yaml" ]; then
+            MANIFEST_PATH="deployment.yaml"
+          fi
+
           if [ ! -f "${MANIFEST_PATH}" ]; then
-            echo "Manifest file not found: ${MANIFEST_PATH}"
+            echo "Manifest file not found. Expected k8s/deployment.yaml or deployment.yaml"
             exit 1
           fi
 
