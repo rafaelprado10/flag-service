@@ -1,0 +1,56 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flag-service
+  namespace: flag-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flag-service
+  template:
+    metadata:
+      labels:
+        app: flag-service
+    spec:
+      containers:
+        - name: flag-service
+          image: 434473100946.dkr.ecr.us-east-1.amazonaws.com/flag-service:v1.0.0
+          ports:
+            - containerPort: 8002
+              name: http
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: flag-service-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: flag-service-secrets
+                  key: POSTGRES_PASSWORD
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: flag-service-secrets
+                  key: MASTER_KEY
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: flag-service-secrets
+                  key: DATABASE_URL
+            - name: AUTH_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: flag-service-config
+                  key: AUTH_SERVICE_URL
+          
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

@@ -8,7 +8,7 @@ on:
     branches: ["main"]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -87,10 +87,39 @@ jobs:
             --ignore-unfixed \
             /src
 
+  compute_release_tag:
+    name: Compute release tag
+    runs-on: ubuntu-latest
+    needs: security_scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next semantic version tag
+        id: tag
+        run: |
+          git fetch --tags --force origin
+          LAST_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n1)"
+          if [ -z "${LAST_TAG}" ]; then
+            NEXT_TAG="v1.0.0"
+          else
+            VERSION="${LAST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
+            PATCH=$((PATCH + 1))
+            NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+          echo "release_tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using release tag: ${NEXT_TAG}"
+
   docker_build_push:
     name: Docker Build & Push (ECR)
     runs-on: ubuntu-latest
-    needs: security_scan
+    needs: compute_release_tag
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     outputs:
       image_tag: ${{ steps.image.outputs.tag }}
@@ -98,7 +127,7 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
       ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-      IMAGE_VERSION: v1.0.0
+      IMAGE_VERSION: ${{ needs.compute_release_tag.outputs.release_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -136,44 +165,66 @@ jobs:
       - name: Push image to AWS ECR
         run: docker push "${{ steps.image.outputs.uri }}"
 
-  tag_external_repo:
-    name: Create tag in external repository
+  update_manifest_in_repo:
+    name: Update manifest image tag in current repository
     runs-on: ubuntu-latest
-    needs: docker_build_push
+    needs: [compute_release_tag, docker_build_push]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout external repository
+      - name: Checkout current repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ secrets.TARGET_REPO }}
-          token: ${{ secrets.TARGET_REPO_PAT }}
-          path: external-repo
+          ref: main
+          fetch-depth: 0
+
+      - name: Update deployment image tag
+        env:
+          RELEASE_TAG: ${{ needs.compute_release_tag.outputs.release_tag }}
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          MANIFEST_PATH: deployment.yaml
+        run: |
+          if [ ! -f "${MANIFEST_PATH}" ]; then
+            echo "Manifest file not found: ${MANIFEST_PATH}"
+            exit 1
+          fi
+
+          sed -i -E "s|(image:\\s*${ECR_REGISTRY}/${ECR_REPOSITORY}:).*|\\1${RELEASE_TAG}|g" "${MANIFEST_PATH}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "${MANIFEST_PATH}"
+          git commit -m "chore(deploy): update image tag to ${RELEASE_TAG}" || echo "No changes to commit"
+          git push origin main
+
+  tag_current_repo:
+    name: Create tag in current repository
+    runs-on: ubuntu-latest
+    needs: [compute_release_tag, docker_build_push, update_manifest_in_repo]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
           fetch-depth: 0
 
       - name: Create and push tag
-        working-directory: external-repo
         env:
+          RELEASE_TAG: ${{ needs.compute_release_tag.outputs.release_tag }}
           SOURCE_IMAGE_TAG: ${{ needs.docker_build_push.outputs.image_tag }}
-          INITIAL_TAG: v1.0.0
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --tags origin
+          git pull --ff-only origin main
 
-          LAST_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n1)"
-          if [ -z "${LAST_TAG}" ]; then
-            TAG_NAME="${INITIAL_TAG}"
-          else
-            VERSION="${LAST_TAG#v}"
-            IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
-            PATCH=$((PATCH + 1))
-            TAG_NAME="v${MAJOR}.${MINOR}.${PATCH}"
-          fi
-
-          if git ls-remote --tags origin "refs/tags/${TAG_NAME}" | grep -q "${TAG_NAME}"; then
-            echo "Tag ${TAG_NAME} already exists in external repository. Skipping."
+          if git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" | grep -q "${RELEASE_TAG}"; then
+            echo "Tag ${RELEASE_TAG} already exists in current repository. Skipping."
             exit 0
           fi
 
-          git tag -a "${TAG_NAME}" -m "Release ${TAG_NAME} from ${GITHUB_REPOSITORY}@${GITHUB_SHA} (image ${SOURCE_IMAGE_TAG})"
-          git push origin "refs/tags/${TAG_NAME}"
+          CURRENT_SHA="$(git rev-parse HEAD)"
+          git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG} from ${GITHUB_REPOSITORY}@${CURRENT_SHA} (image ${SOURCE_IMAGE_TAG})"
+          git push origin "refs/tags/${RELEASE_TAG}"
