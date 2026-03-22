@@ -2,6 +2,7 @@ Flask>=3.0,<4
 Werkzeug>=3.0,<4
 gunicorn==22,<24
 python-dotenv==0.21.0
-requests==2.22.0
+requests==2.19.1
+urllib3==1.23
 psycopg[binary]==3.2.3
 psycopg-pool==3.2.6
