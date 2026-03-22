@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: flag-service
-          image: 434473100946.dkr.ecr.us-east-1.amazonaws.com/flag-service:v1.0.0
+          image: 434473100946.dkr.ecr.us-east-1.amazonaws.com/flag-service:v1.0.2
           ports:
             - containerPort: 8002
               name: http
